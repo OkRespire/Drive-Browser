@@ -1,0 +1,15 @@
+*.json
+
+/output/
+
+
+# Nix build stuff
+/result
+/nix/
+/.direnv/
+.envrc
+
+# IDE/editor configs
+.idea/
+.vscode/
+*.swp
