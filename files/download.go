@@ -21,7 +21,7 @@ func DownloadFile(srv *drive.Service, id string) {
 		log.Fatal(err.Error())
 	}
 
-	file, err := os.Create(dFile.Name)
+	file, err := os.Create("output/" + dFile.Name)
 	if err != nil {
 		log.Fatal(err.Error())
 	}
