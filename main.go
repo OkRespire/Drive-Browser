@@ -21,12 +21,16 @@ import (
 	"context"
 	"drivebrowser/files"
 	"drivebrowser/token"
+	"drivebrowser/tui"
+	"fmt"
 	"log"
 	"os"
 
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/drive/v3"
 	"google.golang.org/api/option"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func main() {
@@ -48,6 +52,11 @@ func main() {
 		log.Fatalf("Unable to retrieve Drive client: %v", err)
 	}
 
+	p := tea.NewProgram(tui.InitialModel())
+	if _, err := p.Run(); err != nil {
+		fmt.Printf("Alas, there's been an error: %v", err)
+		os.Exit(1)
+	}
 	files.ListFiles(srv)
 
 	files.DownloadFile(srv, "1OsGTcPtcRlbuWRIndTFhzY4dEXjrCSrh")
