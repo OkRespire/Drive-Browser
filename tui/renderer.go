@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"log"
 
 	"drivebrowser/files"
@@ -13,11 +14,17 @@ type gModel struct {
 	breadcrumb []string
 	files      []*drive.File
 	cursor     int
+	user       string
 }
 
-func InitialModel(srv *drive.Service, folderId string) gModel {
+func InitialModel(ctx context.Context, srv *drive.Service, folderId string) gModel {
 	file_list := files.ListFiles(srv)
 	breadcrumbVal, err := FindBreadCrumb(srv, folderId)
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+
+	user_name, err := srv.About.Get().Fields("user(displayName)").Context(ctx).Do()
 	if err != nil {
 		log.Fatal(err.Error())
 	}
@@ -26,6 +33,7 @@ func InitialModel(srv *drive.Service, folderId string) gModel {
 		breadcrumb: breadcrumbVal,
 		files:      file_list,
 		cursor:     0,
+		user:       user_name.User.DisplayName,
 	}
 }
 
@@ -54,7 +62,7 @@ func (m gModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m gModel) View() string {
-	s := ""
+	s := m.user + "\n"
 
 	for _, v := range m.breadcrumb {
 		s += v

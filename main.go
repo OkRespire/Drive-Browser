@@ -53,7 +53,7 @@ func main() {
 
 	currDir := "root"
 
-	p := tea.NewProgram(tui.InitialModel(srv, currDir))
+	p := tea.NewProgram(tui.InitialModel(ctx, srv, currDir))
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("Alas, there's been an error: %v", err)
 		os.Exit(1)
