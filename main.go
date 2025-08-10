@@ -19,7 +19,6 @@ package main
 
 import (
 	"context"
-	"drivebrowser/files"
 	"drivebrowser/token"
 	"drivebrowser/tui"
 	"fmt"
@@ -52,14 +51,13 @@ func main() {
 		log.Fatalf("Unable to retrieve Drive client: %v", err)
 	}
 
-	p := tea.NewProgram(tui.InitialModel())
+	currDir := "root"
+
+	p := tea.NewProgram(tui.InitialModel(srv, currDir))
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("Alas, there's been an error: %v", err)
 		os.Exit(1)
 	}
-	files.ListFiles(srv)
-
-	files.DownloadFile(srv, "1OsGTcPtcRlbuWRIndTFhzY4dEXjrCSrh")
 
 }
 
