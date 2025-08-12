@@ -3,7 +3,7 @@
 }:
 
 pkgs.mkShell {
-  name = "superhero-api-wrapper";
+  name = "g-browser";
 
   buildInputs = with pkgs; [
     go
