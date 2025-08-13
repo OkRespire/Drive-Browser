@@ -13,15 +13,21 @@ import (
 )
 
 type gModel struct {
-	breadcrumb []string
-	files      []*drive.File
-	cursor     int
-	user       *drive.User
-	srv        *drive.Service
+	breadcrumb         []string
+	files              []*drive.File
+	cursor             int
+	user               *drive.User
+	srv                *drive.Service
+	pageCount          int
+	nextPageToken      string
+	previousPageTokens []string
+	finalPage          bool
+	width              int
+	height             int
 }
 
 func InitialModel(ctx context.Context, srv *drive.Service, folderId string) gModel {
-	file_list := files.ListFiles(srv)
+	file_list, nextToken := files.ListFiles(srv)
 	breadcrumbVal, err := FindBreadCrumb(srv, folderId)
 	if err != nil {
 		log.Fatal(err.Error())
@@ -33,12 +39,37 @@ func InitialModel(ctx context.Context, srv *drive.Service, folderId string) gMod
 	}
 
 	return gModel{
-		breadcrumb: breadcrumbVal,
-		files:      file_list,
-		cursor:     0,
-		user:       user_name.User,
-		srv:        srv,
+		breadcrumb:         breadcrumbVal,
+		files:              file_list,
+		cursor:             0,
+		user:               user_name.User,
+		srv:                srv,
+		pageCount:          1,
+		nextPageToken:      nextToken,
+		previousPageTokens: []string{},
+		finalPage:          false,
+		width:              0,
+		height:             0,
 	}
+}
+
+func (m *gModel) loadPage(pageToken string) error {
+	call := m.srv.Files.List().PageSize(10).
+		Fields("nextPageToken, files(id, name)")
+
+	if pageToken != "" {
+		call = call.PageToken(pageToken)
+	}
+
+	res, err := call.Do()
+	if err != nil {
+		return err
+	}
+
+	m.files = res.Files
+	m.nextPageToken = res.NextPageToken
+	m.cursor = 0
+	return nil
 }
 
 func (m gModel) Init() tea.Cmd {
@@ -47,6 +78,9 @@ func (m gModel) Init() tea.Cmd {
 
 func (m gModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
 
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -64,6 +98,29 @@ func (m gModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursor > len(m.files)-1 {
 				m.cursor = 0
 			}
+		case "right", "l":
+			if m.nextPageToken != "" {
+				m.previousPageTokens = append(m.previousPageTokens, m.nextPageToken)
+				err := m.loadPage(m.nextPageToken)
+				if err != nil {
+					log.Fatal("Error loading next page:", err)
+				}
+				m.pageCount++
+			} else {
+				m.finalPage = true
+			}
+
+		case "left", "h":
+			m.finalPage = false
+			if len(m.previousPageTokens) > 0 {
+				prev := m.previousPageTokens[len(m.previousPageTokens)-1]
+				m.previousPageTokens = m.previousPageTokens[:len(m.previousPageTokens)-1]
+				err := m.loadPage(prev)
+				if err != nil {
+					log.Fatal("Error loading previous page:", err)
+				}
+				m.pageCount--
+			}
 		case "enter":
 			files.DownloadFile(m.srv, m.files[m.cursor].Id)
 		}
@@ -73,6 +130,12 @@ func (m gModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m gModel) View() string {
+	maxNameLen := 0
+	for _, f := range m.files {
+		if len(f.Name) > maxNameLen {
+			maxNameLen = len(f.Name)
+		}
+	}
 
 	breadcrumbStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#FFFFFF")).
@@ -81,8 +144,12 @@ func (m gModel) View() string {
 
 	contentStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#9AA0A6")).
-		Border(lipgloss.NormalBorder(), true).
-		Padding(0, 1).Bold(true)
+		Padding(0, 0, 1).Bold(true)
+
+	pageStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#9AA0A6")).
+		Padding(0, 0, 1).Bold(true)
+
 	breadcrumb_string := fmt.Sprintf("%s (%s)\n", m.user.DisplayName, m.user.EmailAddress)
 
 	for _, v := range m.breadcrumb {
@@ -98,15 +165,34 @@ func (m gModel) View() string {
 			cursor = ">"
 		}
 
-		file_string += fmt.Sprintf("\n%s %s", cursor, f.Name)
+		file_string += fmt.Sprintf("\n%s %-*s", cursor, maxNameLen, f.Name)
+	}
+
+	var page_string string
+	if m.finalPage {
+		page_string = fmt.Sprintf("< Page: %d", m.pageCount)
+	} else if m.pageCount == 1 {
+		page_string = fmt.Sprintf("Page: %d >", m.pageCount)
+	} else {
+		page_string = fmt.Sprintf("< Page: %d >", m.pageCount)
 	}
 
 	// Layout
-	breadcrumbBar := breadcrumbStyle.Render(breadcrumb_string)
+	breadcrumbBar := lipgloss.PlaceHorizontal(
+		m.width,
+		lipgloss.Center,
+		breadcrumbStyle.Render(breadcrumb_string),
+	)
 	content := contentStyle.Render(file_string)
+	page := lipgloss.PlaceHorizontal(
+		lipgloss.Width(breadcrumbBar),
+		lipgloss.Center,
+		pageStyle.Render(page_string),
+	)
 
-	return lipgloss.JoinVertical(lipgloss.Center,
+	return lipgloss.JoinVertical(lipgloss.Left,
 		breadcrumbBar,
 		content,
+		page,
 	)
 }
