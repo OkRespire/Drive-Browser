@@ -17,6 +17,8 @@ var mimeTypes = map[string]string{
 	"application/vnd.google-apps.drawing":      "image/png",
 }
 
+
+
 func DownloadFile(srv *drive.Service, id string) {
 	dFile, err := srv.Files.Get(id).Fields("name, mimeType").Do()
 	if err != nil {

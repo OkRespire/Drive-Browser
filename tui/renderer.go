@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 
@@ -15,6 +16,7 @@ import (
 type gModel struct {
 	breadcrumb         []string
 	files              []*drive.File
+	pages              [][]*drive.File
 	cursor             int
 	user               *drive.User
 	srv                *drive.Service
@@ -41,6 +43,7 @@ func InitialModel(ctx context.Context, srv *drive.Service, folderId string) gMod
 	return gModel{
 		breadcrumb:         breadcrumbVal,
 		files:              file_list,
+		pages:              [][]*drive.File{file_list},
 		cursor:             0,
 		user:               user_name.User,
 		srv:                srv,
@@ -53,7 +56,7 @@ func InitialModel(ctx context.Context, srv *drive.Service, folderId string) gMod
 	}
 }
 
-func (m *gModel) loadPage(pageToken string) error {
+func (m *gModel) loadNextPage(pageToken string) error {
 	call := m.srv.Files.List().PageSize(10).
 		Fields("nextPageToken, files(id, name)")
 
@@ -69,6 +72,9 @@ func (m *gModel) loadPage(pageToken string) error {
 	m.files = res.Files
 	m.nextPageToken = res.NextPageToken
 	m.cursor = 0
+	m.pages = append(m.pages, res.Files)
+
+	m.pageCount++
 	return nil
 }
 
@@ -101,11 +107,10 @@ func (m gModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "right", "l":
 			if m.nextPageToken != "" {
 				m.previousPageTokens = append(m.previousPageTokens, m.nextPageToken)
-				err := m.loadPage(m.nextPageToken)
+				err := m.loadNextPage(m.nextPageToken)
 				if err != nil {
 					log.Fatal("Error loading next page:", err)
 				}
-				m.pageCount++
 			} else {
 				m.finalPage = true
 			}
@@ -113,20 +118,43 @@ func (m gModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "left", "h":
 			m.finalPage = false
 			if len(m.previousPageTokens) > 0 {
-				prev := m.previousPageTokens[len(m.previousPageTokens)-1]
-				m.previousPageTokens = m.previousPageTokens[:len(m.previousPageTokens)-1]
-				err := m.loadPage(prev)
+				err := m.loadCachedPage(m.pageCount - 1)
 				if err != nil {
-					log.Fatal("Error loading previous page:", err)
+					log.Fatal(err.Error())
 				}
-				m.pageCount--
 			}
 		case "enter":
-			files.DownloadFile(m.srv, m.files[m.cursor].Id)
+			mimeType, err := m.MimeTypeCheck(m.files[m.cursor].Id)
+			if err != nil {
+				log.Fatal(err.Error())
+			}
+			if mimeType == "application/vnd.google-apps.folder" {
+				fmt.Println(m.files[m.cursor].Name)
+				m.OpenFolder(m.files[m.cursor].Id)
+
+			} else {
+				files.DownloadFile(m.srv, m.files[m.cursor].Id)
+			}
 		}
 	}
 
 	return m, nil
+}
+
+func (m *gModel) loadCachedPage(currPage int) error {
+
+	index := currPage - 1
+
+	if index < 0 {
+		return errors.New("index out of bounds")
+	}
+	m.files = m.pages[index]
+	m.pageCount--
+	m.nextPageToken = m.previousPageTokens[index]
+	m.cursor = 0
+
+	return nil
+
 }
 
 func (m gModel) View() string {
