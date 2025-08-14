@@ -30,10 +30,6 @@ type gModel struct {
 
 func InitialModel(ctx context.Context, srv *drive.Service, folderId string) gModel {
 	file_list, nextToken := files.ListFiles(srv)
-	breadcrumbVal, err := FindBreadCrumb(srv, folderId)
-	if err != nil {
-		log.Fatal(err.Error())
-	}
 
 	user_name, err := srv.About.Get().Fields("user(displayName, emailAddress)").Context(ctx).Do()
 	if err != nil {
@@ -41,7 +37,7 @@ func InitialModel(ctx context.Context, srv *drive.Service, folderId string) gMod
 	}
 
 	return gModel{
-		breadcrumb:         breadcrumbVal,
+		breadcrumb:         []string{"My Drive"},
 		files:              file_list,
 		pages:              [][]*drive.File{file_list},
 		cursor:             0,
@@ -129,7 +125,6 @@ func (m gModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				log.Fatal(err.Error())
 			}
 			if mimeType == "application/vnd.google-apps.folder" {
-				fmt.Println(m.files[m.cursor].Name)
 				m.OpenFolder(m.files[m.cursor].Id)
 
 			} else {
@@ -180,7 +175,10 @@ func (m gModel) View() string {
 
 	breadcrumb_string := fmt.Sprintf("%s (%s)\n", m.user.DisplayName, m.user.EmailAddress)
 
-	for _, v := range m.breadcrumb {
+	for i, v := range m.breadcrumb {
+		if i > 0 {
+			breadcrumb_string += " > "
+		}
 		breadcrumb_string += v
 	}
 

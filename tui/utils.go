@@ -6,26 +6,15 @@ import (
 	"google.golang.org/api/drive/v3"
 )
 
-func FindBreadCrumb(srv *drive.Service, folderId string) ([]string, error) {
-	breadcrumb := []string{}
-	currentId := folderId
-
-	for {
-		f, err := srv.Files.Get(currentId).Fields("id, name, parents").Do()
-		if err != nil {
-			return nil, err
-		}
-
-		breadcrumb = append([]string{f.Name}, breadcrumb...)
-
-		if len(f.Parents) == 0 || f.Parents[0] == "root" {
-			break
-		}
-
-		currentId = f.Parents[0]
+func (m *gModel) FindBreadCrumb(srv *drive.Service, folderId string) error {
+	f, err := srv.Files.Get(folderId).Fields("name").Do()
+	if err != nil {
+		return err
 	}
 
-	return breadcrumb, nil
+	m.breadcrumb = append(m.breadcrumb, f.Name)
+
+	return nil
 
 }
 
@@ -47,6 +36,8 @@ func (m *gModel) OpenFolder(id string) error {
 	if err != nil {
 		return err
 	}
+
+	m.FindBreadCrumb(m.srv, m.files[m.cursor].Id)
 
 	m.files = r.Files
 	m.nextPageToken = r.NextPageToken
