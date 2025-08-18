@@ -16,3 +16,6 @@ This project requires Google OAuth2 credentials to access the Drive API.
    ```bash
    go run main.go
    ```
+
+
+## Extra note: I only tested this on linux
