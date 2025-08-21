@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
 
@@ -13,6 +12,17 @@ import (
 	"google.golang.org/api/drive/v3"
 )
 
+type NavigationState struct {
+	files              []*drive.File
+	pages              [][]*drive.File
+	pageCount          int
+	currentFolderId    string
+	nextPageToken      string
+	previousPageTokens []string
+	finalPage          bool
+	cursor             int
+}
+
 type gModel struct {
 	breadcrumb         []string
 	files              []*drive.File
@@ -21,11 +31,14 @@ type gModel struct {
 	user               *drive.User
 	srv                *drive.Service
 	pageCount          int
+	currentFolderId    string
 	nextPageToken      string
 	previousPageTokens []string
 	finalPage          bool
 	width              int
 	height             int
+
+	navigationStack []NavigationState
 }
 
 func InitialModel(ctx context.Context, srv *drive.Service, folderId string) gModel {
@@ -49,29 +62,9 @@ func InitialModel(ctx context.Context, srv *drive.Service, folderId string) gMod
 		finalPage:          false,
 		width:              0,
 		height:             0,
+		currentFolderId:    folderId,
+		navigationStack:    []NavigationState{},
 	}
-}
-
-func (m *gModel) loadNextPage(pageToken string) error {
-	call := m.srv.Files.List().PageSize(10).
-		Fields("nextPageToken, files(id, name)")
-
-	if pageToken != "" {
-		call = call.PageToken(pageToken)
-	}
-
-	res, err := call.Do()
-	if err != nil {
-		return err
-	}
-
-	m.files = res.Files
-	m.nextPageToken = res.NextPageToken
-	m.cursor = 0
-	m.pages = append(m.pages, res.Files)
-
-	m.pageCount++
-	return nil
 }
 
 func (m gModel) Init() tea.Cmd {
@@ -103,7 +96,7 @@ func (m gModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "right", "l":
 			if m.nextPageToken != "" {
 				m.previousPageTokens = append(m.previousPageTokens, m.nextPageToken)
-				err := m.loadNextPage(m.nextPageToken)
+				err := m.LoadNextPage(m.nextPageToken)
 				if err != nil {
 					log.Fatal("Error loading next page:", err)
 				}
@@ -114,7 +107,7 @@ func (m gModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "left", "h":
 			m.finalPage = false
 			if len(m.previousPageTokens) > 0 {
-				err := m.loadCachedPage(m.pageCount - 1)
+				err := m.LoadCachedPage(m.pageCount - 1)
 				if err != nil {
 					log.Fatal(err.Error())
 				}
@@ -130,26 +123,15 @@ func (m gModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				files.DownloadFile(m.srv, m.files[m.cursor].Id)
 			}
+		case "backspace":
+			if err := m.RestorePreviousState(); err != nil {
+				log.Fatal(err.Error())
+			}
+
 		}
 	}
 
 	return m, nil
-}
-
-func (m *gModel) loadCachedPage(currPage int) error {
-
-	index := currPage - 1
-
-	if index < 0 {
-		return errors.New("index out of bounds")
-	}
-	m.files = m.pages[index]
-	m.pageCount--
-	m.nextPageToken = m.previousPageTokens[index]
-	m.cursor = 0
-
-	return nil
-
 }
 
 func (m gModel) View() string {
