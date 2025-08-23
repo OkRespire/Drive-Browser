@@ -6,40 +6,12 @@ import (
 	"log"
 
 	"drivebrowser/files"
+	"drivebrowser/utils"
 
 	tea "github.com/charmbracelet/bubbletea"
 	lipgloss "github.com/charmbracelet/lipgloss"
 	"google.golang.org/api/drive/v3"
 )
-
-type NavigationState struct {
-	files              []*drive.File
-	pages              [][]*drive.File
-	pageCount          int
-	currentFolderId    string
-	nextPageToken      string
-	previousPageTokens []string
-	finalPage          bool
-	cursor             int
-}
-
-type gModel struct {
-	breadcrumb         []string
-	files              []*drive.File
-	pages              [][]*drive.File
-	cursor             int
-	user               *drive.User
-	srv                *drive.Service
-	pageCount          int
-	currentFolderId    string
-	nextPageToken      string
-	previousPageTokens []string
-	finalPage          bool
-	width              int
-	height             int
-
-	navigationStack []NavigationState
-}
 
 func InitialModel(ctx context.Context, srv *drive.Service, folderId string) gModel {
 	file_list, nextToken := files.ListFiles(srv)
@@ -167,13 +139,18 @@ func (m gModel) View() string {
 	file_string := ""
 
 	for i, f := range m.files {
+		mimeType, err := m.MimeTypeCheck(f.Id)
+		if err != nil {
+			log.Fatal(err.Error())
+		}
+		icon := utils.GetFileIcon(f.Name, mimeType)
 
 		cursor := " "
 		if m.cursor == i {
 			cursor = ">"
 		}
 
-		file_string += fmt.Sprintf("\n%s %-*s", cursor, maxNameLen, f.Name)
+		file_string += fmt.Sprintf("\n%s %s %-*s", cursor, icon, maxNameLen, f.Name)
 	}
 
 	var page_string string

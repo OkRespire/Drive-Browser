@@ -6,6 +6,35 @@ import (
 	"google.golang.org/api/drive/v3"
 )
 
+type NavigationState struct {
+	files              []*drive.File
+	pages              [][]*drive.File
+	pageCount          int
+	currentFolderId    string
+	nextPageToken      string
+	previousPageTokens []string
+	finalPage          bool
+	cursor             int
+}
+
+type gModel struct {
+	breadcrumb         []string
+	files              []*drive.File
+	pages              [][]*drive.File
+	cursor             int
+	user               *drive.User
+	srv                *drive.Service
+	pageCount          int
+	currentFolderId    string
+	nextPageToken      string
+	previousPageTokens []string
+	finalPage          bool
+	width              int
+	height             int
+
+	navigationStack []NavigationState
+}
+
 func (m *gModel) FindBreadCrumb(srv *drive.Service, folderId string) error {
 	f, err := srv.Files.Get(folderId).Fields("name").Do()
 	if err != nil {
@@ -31,23 +60,15 @@ func (m gModel) MimeTypeCheck(id string) (string, error) {
 
 func (m *gModel) SaveCurrentState() {
 	state := NavigationState{
-		files:              make([]*drive.File, len(m.files)),
-		pages:              make([][]*drive.File, len(m.pages)),
+		files:              m.files,
+		pages:              m.pages,
 		pageCount:          m.pageCount,
 		currentFolderId:    m.currentFolderId,
 		nextPageToken:      m.nextPageToken,
-		previousPageTokens: make([]string, len(m.previousPageTokens)),
+		previousPageTokens: m.previousPageTokens,
 		finalPage:          m.finalPage,
 		cursor:             m.cursor,
 	}
-
-	copy(state.files, m.files)
-	for i, page := range m.pages {
-		state.pages[i] = make([]*drive.File, len(page))
-		copy(state.pages[i], page)
-	}
-
-	copy(state.previousPageTokens, m.previousPageTokens)
 
 	m.navigationStack = append(m.navigationStack, state)
 }
@@ -117,7 +138,7 @@ func (m *gModel) LoadCachedPage(currPage int) error {
 func (m *gModel) RestorePreviousState() error {
 
 	if len(m.navigationStack) == 0 {
-		return fmt.Errorf("no previous state to restore")
+		return fmt.Errorf("No previous state to restore")
 	}
 
 	lastIndex := len(m.navigationStack) - 1
