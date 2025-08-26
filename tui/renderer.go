@@ -36,6 +36,8 @@ func InitialModel(ctx context.Context, srv *drive.Service, folderId string) gMod
 		height:             0,
 		currentFolderId:    folderId,
 		navigationStack:    []NavigationState{},
+		isSearching:        false,
+		searchQuery:        "",
 	}
 }
 
@@ -50,6 +52,37 @@ func (m gModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 
 	case tea.KeyMsg:
+		if m.isSearching {
+			switch msg.String() {
+			case "ctrl+c":
+				return m, tea.Quit
+			case "enter":
+				if m.searchQuery != "" {
+					err := m.Search()
+					if err != nil {
+						log.Fatal("Search error:", err)
+					}
+				}
+				m.isSearching = false
+				m.searchQuery = ""
+			case "backspace":
+				if len(m.searchQuery) > 0 {
+					m.searchQuery = m.searchQuery[:len(m.searchQuery)-1]
+				}
+
+			case "esc":
+				m.isSearching = false
+
+			default:
+				if len(msg.String()) == 1 {
+					m.searchQuery += msg.String()
+				}
+
+			}
+			return m, nil
+
+		}
+
 		switch msg.String() {
 
 		case "ctrl+c", "q":
@@ -85,10 +118,7 @@ func (m gModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		case "enter":
-			mimeType, err := m.MimeTypeCheck(m.files[m.cursor].Id)
-			if err != nil {
-				log.Fatal(err.Error())
-			}
+			mimeType := m.files[m.cursor].MimeType
 			if mimeType == "application/vnd.google-apps.folder" {
 				m.OpenFolder(m.files[m.cursor].Id)
 
@@ -99,6 +129,9 @@ func (m gModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if err := m.RestorePreviousState(); err != nil {
 				log.Fatal(err.Error())
 			}
+		case "/":
+			m.isSearching = true
+			m.searchQuery = ""
 
 		}
 	}
@@ -139,11 +172,7 @@ func (m gModel) View() string {
 	file_string := ""
 
 	for i, f := range m.files {
-		mimeType, err := m.MimeTypeCheck(f.Id)
-		if err != nil {
-			log.Fatal(err.Error())
-		}
-		icon := utils.GetFileIcon(f.Name, mimeType)
+		icon := utils.GetFileIcon(f.Name, f.MimeType)
 
 		cursor := " "
 		if m.cursor == i {
@@ -161,19 +190,30 @@ func (m gModel) View() string {
 	} else {
 		page_string = fmt.Sprintf("< Page: %d >", m.pageCount)
 	}
-
-	// Layout
 	breadcrumbBar := lipgloss.PlaceHorizontal(
 		m.width,
 		lipgloss.Center,
 		breadcrumbStyle.Render(breadcrumb_string),
 	)
+
 	content := contentStyle.Render(file_string)
 	page := lipgloss.PlaceHorizontal(
 		lipgloss.Width(breadcrumbBar),
 		lipgloss.Center,
 		pageStyle.Render(page_string),
 	)
+
+	if m.isSearching {
+		// Show search input at bottom
+		searchInput := fmt.Sprintf("Search: %s_", m.searchQuery)
+		return lipgloss.JoinVertical(lipgloss.Left,
+			breadcrumbBar,
+			content,
+			page,
+			lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFF00")).Render(searchInput),
+		)
+	}
+	// Layout
 
 	return lipgloss.JoinVertical(lipgloss.Left,
 		breadcrumbBar,

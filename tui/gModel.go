@@ -27,12 +27,13 @@ type gModel struct {
 	pageCount          int
 	currentFolderId    string
 	nextPageToken      string
+	searchQuery        string
 	previousPageTokens []string
 	finalPage          bool
 	width              int
 	height             int
-
-	navigationStack []NavigationState
+	isSearching        bool
+	navigationStack    []NavigationState
 }
 
 func (m *gModel) FindBreadCrumb(srv *drive.Service, folderId string) error {
@@ -44,17 +45,6 @@ func (m *gModel) FindBreadCrumb(srv *drive.Service, folderId string) error {
 	m.breadcrumb = append(m.breadcrumb, f.Name)
 
 	return nil
-
-}
-
-func (m gModel) MimeTypeCheck(id string) (string, error) {
-
-	dFile, err := m.srv.Files.Get(id).Fields("mimeType").Do()
-	if err != nil {
-		return "", err
-	}
-
-	return dFile.MimeType, nil
 
 }
 
@@ -76,7 +66,7 @@ func (m *gModel) SaveCurrentState() {
 func (m *gModel) OpenFolder(id string) error {
 	r, err := m.srv.Files.List().PageSize(10).
 		Q(fmt.Sprintf("'%s' in parents", id)).
-		Fields("nextPageToken, files(id, name)").Do()
+		Fields("nextPageToken, files(id, name, mimeType)").Do()
 	if err != nil {
 		return err
 	}
@@ -99,7 +89,7 @@ func (m *gModel) OpenFolder(id string) error {
 func (m *gModel) LoadNextPage(pageToken string) error {
 	call := m.srv.Files.List().PageSize(10).
 		OrderBy("name").
-		Fields("nextPageToken, files(id, name)")
+		Fields("nextPageToken, files(id, name, mimeType)")
 
 	if pageToken != "" {
 		call = call.PageToken(pageToken)
@@ -159,6 +149,30 @@ func (m *gModel) RestorePreviousState() error {
 	if len(m.breadcrumb) > 1 {
 		m.breadcrumb = m.breadcrumb[:len(m.breadcrumb)-2]
 	}
+
+	return nil
+}
+
+func (m *gModel) Search() error {
+	m.SaveCurrentState()
+	r, err := m.srv.Files.List().PageSize(10).
+		OrderBy("name").
+		Q(fmt.Sprintf("name contains '%s'", m.searchQuery)).
+		Fields("nextPageToken, files(id, name)").Do()
+
+	if err != nil {
+		m.RestorePreviousState()
+		return err
+	}
+
+	m.files = r.Files
+	m.nextPageToken = r.NextPageToken
+	m.cursor = 0
+	m.pageCount = 1
+	m.previousPageTokens = []string{""}
+	m.pages = [][]*drive.File{r.Files}
+	m.finalPage = false
+	m.isSearching = true
 
 	return nil
 }
