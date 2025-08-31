@@ -38,6 +38,8 @@ func InitialModel(ctx context.Context, srv *drive.Service, folderId string) gMod
 		navigationStack:    []NavigationState{},
 		isSearching:        false,
 		searchQuery:        "",
+		searchModel:        nil,
+		isTyping:           false,
 	}
 }
 
@@ -62,8 +64,8 @@ func (m gModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if err != nil {
 						log.Fatal("Search error:", err)
 					}
+					m.isTyping = false
 				}
-				m.isSearching = false
 				m.searchQuery = ""
 			case "backspace":
 				if len(m.searchQuery) > 0 {
@@ -72,6 +74,9 @@ func (m gModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			case "esc":
 				m.isSearching = false
+				m.searchQuery = ""
+			case "/":
+				m.isTyping = true
 
 			default:
 				if len(msg.String()) == 1 {
@@ -79,8 +84,17 @@ func (m gModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 
 			}
-			return m, nil
 
+		}
+		var currentFiles []*drive.File
+		var currentCursor *int
+
+		if m.searchModel != nil {
+			currentFiles = m.searchModel.files
+			currentCursor = &m.searchModel.cursor
+		} else {
+			currentFiles = m.files
+			currentCursor = &m.cursor
 		}
 
 		switch msg.String() {
@@ -89,14 +103,14 @@ func (m gModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 
 		case "up", "k":
-			m.cursor--
-			if m.cursor < 0 {
-				m.cursor = len(m.files) - 1
+			*currentCursor--
+			if *currentCursor < 0 {
+				*currentCursor = len(currentFiles) - 1
 			}
 		case "down", "j":
-			m.cursor++
-			if m.cursor > len(m.files)-1 {
-				m.cursor = 0
+			*currentCursor++
+			if *currentCursor > len(currentFiles)-1 {
+				*currentCursor = 0
 			}
 		case "right", "l":
 			if m.nextPageToken != "" {
@@ -118,12 +132,12 @@ func (m gModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		case "enter":
-			mimeType := m.files[m.cursor].MimeType
+			mimeType := currentFiles[*currentCursor].MimeType
 			if mimeType == "application/vnd.google-apps.folder" {
-				m.OpenFolder(m.files[m.cursor].Id)
+				m.OpenFolder(currentFiles[*currentCursor].Id)
 
 			} else {
-				files.DownloadFile(m.srv, m.files[m.cursor].Id)
+				files.DownloadFile(m.srv, currentFiles[*currentCursor].Id)
 			}
 		case "backspace":
 			if err := m.RestorePreviousState(); err != nil {
@@ -132,6 +146,8 @@ func (m gModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "/":
 			m.isSearching = true
 			m.searchQuery = ""
+			m.searchModel = nil
+			m.isTyping = true
 
 		}
 	}
@@ -140,8 +156,26 @@ func (m gModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m gModel) View() string {
+	var files []*drive.File
+	var cursorNum int
+	var pageCount int
+	var finalPage bool
+	var breadcrumb []string
+
+	breadcrumb = m.breadcrumb
+	if m.isSearching && m.searchModel != nil {
+		files = m.searchModel.files
+		cursorNum = m.searchModel.cursor
+		pageCount = m.searchModel.pageCount
+		finalPage = m.searchModel.finalPage
+	} else {
+		files = m.files
+		cursorNum = m.cursor
+		pageCount = m.pageCount
+		finalPage = m.finalPage
+	}
 	maxNameLen := 0
-	for _, f := range m.files {
+	for _, f := range files {
 		if len(f.Name) > maxNameLen {
 			maxNameLen = len(f.Name)
 		}
@@ -162,7 +196,7 @@ func (m gModel) View() string {
 
 	breadcrumb_string := fmt.Sprintf("%s (%s)\n", m.user.DisplayName, m.user.EmailAddress)
 
-	for i, v := range m.breadcrumb {
+	for i, v := range breadcrumb {
 		if i > 0 {
 			breadcrumb_string += " > "
 		}
@@ -171,11 +205,11 @@ func (m gModel) View() string {
 
 	file_string := ""
 
-	for i, f := range m.files {
+	for i, f := range files {
 		icon := utils.GetFileIcon(f.Name, f.MimeType)
 
 		cursor := " "
-		if m.cursor == i {
+		if cursorNum == i {
 			cursor = ">"
 		}
 
@@ -183,12 +217,12 @@ func (m gModel) View() string {
 	}
 
 	var page_string string
-	if m.finalPage {
-		page_string = fmt.Sprintf("< Page: %d", m.pageCount)
-	} else if m.pageCount == 1 {
-		page_string = fmt.Sprintf("Page: %d >", m.pageCount)
+	if finalPage {
+		page_string = fmt.Sprintf("< Page: %d", pageCount)
+	} else if pageCount == 1 {
+		page_string = fmt.Sprintf("Page: %d >", pageCount)
 	} else {
-		page_string = fmt.Sprintf("< Page: %d >", m.pageCount)
+		page_string = fmt.Sprintf("< Page: %d >", pageCount)
 	}
 	breadcrumbBar := lipgloss.PlaceHorizontal(
 		m.width,
@@ -203,7 +237,7 @@ func (m gModel) View() string {
 		pageStyle.Render(page_string),
 	)
 
-	if m.isSearching {
+	if m.isTyping {
 		// Show search input at bottom
 		searchInput := fmt.Sprintf("Search: %s_", m.searchQuery)
 		return lipgloss.JoinVertical(lipgloss.Left,

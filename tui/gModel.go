@@ -6,6 +6,16 @@ import (
 	"google.golang.org/api/drive/v3"
 )
 
+type searchModel struct {
+	files              []*drive.File
+	pages              [][]*drive.File
+	cursor             int
+	pageCount          int
+	nextPageToken      string
+	previousPageTokens []string
+	finalPage          bool
+}
+
 type NavigationState struct {
 	files              []*drive.File
 	pages              [][]*drive.File
@@ -33,7 +43,9 @@ type gModel struct {
 	width              int
 	height             int
 	isSearching        bool
+	searchModel        *searchModel
 	navigationStack    []NavigationState
+	isTyping           bool
 }
 
 func (m *gModel) FindBreadCrumb(srv *drive.Service, folderId string) error {
@@ -153,8 +165,20 @@ func (m *gModel) RestorePreviousState() error {
 	return nil
 }
 
+func (m *gModel) SaveSearchModel(r *drive.FileList) {
+	m.searchModel = &searchModel{
+		files:              r.Files,
+		pages:              [][]*drive.File{r.Files},
+		cursor:             0,
+		pageCount:          1,
+		nextPageToken:      r.NextPageToken,
+		previousPageTokens: []string{""},
+		finalPage:          r.NextPageToken == "",
+	}
+
+}
+
 func (m *gModel) Search() error {
-	m.SaveCurrentState()
 	r, err := m.srv.Files.List().PageSize(10).
 		OrderBy("name").
 		Q(fmt.Sprintf("name contains '%s'", m.searchQuery)).
@@ -164,14 +188,8 @@ func (m *gModel) Search() error {
 		m.RestorePreviousState()
 		return err
 	}
+	m.SaveSearchModel(r)
 
-	m.files = r.Files
-	m.nextPageToken = r.NextPageToken
-	m.cursor = 0
-	m.pageCount = 1
-	m.previousPageTokens = []string{""}
-	m.pages = [][]*drive.File{r.Files}
-	m.finalPage = false
 	m.isSearching = true
 
 	return nil
