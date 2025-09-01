@@ -16,4 +16,8 @@ This project requires Google OAuth2 credentials to access the Drive API.
    ```bash
    go run main.go
    ```
-## Extra note: I only tested this on Linux and Windows. Windows has a less elegant solution
+⚠️ Important: The program will not work without your own credentials.json. There is currently no shared secret or demo secret included.
+
+
+## Extra note: I only tested this on linux, and on Windows the url does not get captured... for some reason
+
