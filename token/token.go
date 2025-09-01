@@ -8,12 +8,14 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"runtime"
 	"strings"
 
 	"golang.org/x/oauth2"
 )
 
 func getTokenFromLocalServer(config *oauth2.Config) *oauth2.Token {
+	mux := http.NewServeMux()
 	listener, err := net.Listen("tcp", "localhost:8080")
 	fmt.Println("Listening...")
 	if err != nil {
@@ -22,7 +24,7 @@ func getTokenFromLocalServer(config *oauth2.Config) *oauth2.Token {
 
 	codeCh := make(chan string)
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Println("Authorisation in progress")
 		code := r.URL.Query().Get("code")
 		if code == "" {
@@ -32,7 +34,9 @@ func getTokenFromLocalServer(config *oauth2.Config) *oauth2.Token {
 		fmt.Fprintln(w, "Authorization complete. You can close this window.")
 		codeCh <- code
 	})
-
+	server := &http.Server{
+		Handler: mux,
+	}
 	go func() {
 		err := http.Serve(listener, nil)
 		if err != nil && !strings.Contains(err.Error(), "use of closed network connection") {
@@ -42,9 +46,16 @@ func getTokenFromLocalServer(config *oauth2.Config) *oauth2.Token {
 
 	authURL := config.AuthCodeURL("state-token", oauth2.AccessTypeOffline)
 	openURL(authURL)
-
-	code := <-codeCh
-	listener.Close()
+	var code string
+	if runtime.GOOS == "windows" {
+		fmt.Println("A new browser tab will be opened.\nPaste the code found in the url here:")
+		fmt.Println("The part of the URL that  you would need to focus on is code=YOUR_CODE. Ignore the & at the end")
+		fmt.Print("Code: ")
+		fmt.Scanln(&code)
+	} else {
+		code = <-codeCh
+	}
+	server.Shutdown(context.Background())
 
 	token, err := config.Exchange(context.Background(), code)
 	if err != nil {
