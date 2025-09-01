@@ -6,16 +6,6 @@ import (
 	"google.golang.org/api/drive/v3"
 )
 
-type searchModel struct {
-	files              []*drive.File
-	pages              [][]*drive.File
-	cursor             int
-	pageCount          int
-	nextPageToken      string
-	previousPageTokens []string
-	finalPage          bool
-}
-
 type NavigationState struct {
 	files              []*drive.File
 	pages              [][]*drive.File
@@ -98,13 +88,13 @@ func (m *gModel) OpenFolder(id string) error {
 	return nil
 }
 
-func (m *gModel) LoadNextPage(pageToken string) error {
+func (m *gModel) LoadNextPage() error {
 	call := m.srv.Files.List().PageSize(10).
 		OrderBy("name").
 		Fields("nextPageToken, files(id, name, mimeType)")
 
-	if pageToken != "" {
-		call = call.PageToken(pageToken)
+	if m.nextPageToken != "" {
+		call = call.PageToken(m.nextPageToken)
 	}
 
 	res, err := call.Do()
@@ -112,20 +102,19 @@ func (m *gModel) LoadNextPage(pageToken string) error {
 		return err
 	}
 
+	m.previousPageTokens = append(m.previousPageTokens, m.nextPageToken)
 	m.files = res.Files
 	m.nextPageToken = res.NextPageToken
 	m.cursor = 0
 	m.pages = append(m.pages, res.Files)
-
 	m.pageCount++
 	return nil
 }
 
 func (m *gModel) LoadCachedPage(currPage int) error {
-
 	index := currPage - 1
 
-	if index < 0 {
+	if index < 0 || index >= len(m.pages) {
 		return nil
 	}
 	m.files = m.pages[index]
@@ -161,36 +150,6 @@ func (m *gModel) RestorePreviousState() error {
 	if len(m.breadcrumb) > 1 {
 		m.breadcrumb = m.breadcrumb[:len(m.breadcrumb)-2]
 	}
-
-	return nil
-}
-
-func (m *gModel) SaveSearchModel(r *drive.FileList) {
-	m.searchModel = &searchModel{
-		files:              r.Files,
-		pages:              [][]*drive.File{r.Files},
-		cursor:             0,
-		pageCount:          1,
-		nextPageToken:      r.NextPageToken,
-		previousPageTokens: []string{""},
-		finalPage:          r.NextPageToken == "",
-	}
-
-}
-
-func (m *gModel) Search() error {
-	r, err := m.srv.Files.List().PageSize(10).
-		OrderBy("name").
-		Q(fmt.Sprintf("name contains '%s'", m.searchQuery)).
-		Fields("nextPageToken, files(id, name)").Do()
-
-	if err != nil {
-		m.RestorePreviousState()
-		return err
-	}
-	m.SaveSearchModel(r)
-
-	m.isSearching = true
 
 	return nil
 }

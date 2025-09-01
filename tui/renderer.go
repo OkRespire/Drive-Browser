@@ -66,7 +66,6 @@ func (m gModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 					m.isTyping = false
 				}
-				m.searchQuery = ""
 			case "backspace":
 				if len(m.searchQuery) > 0 {
 					m.searchQuery = m.searchQuery[:len(m.searchQuery)-1]
@@ -76,6 +75,7 @@ func (m gModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.isSearching = false
 				m.searchQuery = ""
 			case "/":
+				m.searchQuery = ""
 				m.isTyping = true
 
 			default:
@@ -96,6 +96,9 @@ func (m gModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			currentFiles = m.files
 			currentCursor = &m.cursor
 		}
+		if len(currentFiles) == 0 {
+			return m, nil
+		}
 
 		switch msg.String() {
 
@@ -113,22 +116,42 @@ func (m gModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				*currentCursor = 0
 			}
 		case "right", "l":
-			if m.nextPageToken != "" {
-				m.previousPageTokens = append(m.previousPageTokens, m.nextPageToken)
-				err := m.LoadNextPage(m.nextPageToken)
-				if err != nil {
-					log.Fatal("Error loading next page:", err)
+			if m.isSearching && m.searchModel != nil {
+				if m.searchModel.nextPageToken != "" {
+					err := m.LoadNextSearchPage()
+					if err != nil {
+						log.Fatal("Error loading next search page:", err)
+					}
+				} else {
+					m.searchModel.finalPage = true
 				}
 			} else {
-				m.finalPage = true
+				if m.nextPageToken != "" {
+					err := m.LoadNextPage()
+					if err != nil {
+						log.Fatal("Error loading next page:", err)
+					}
+				} else {
+					m.finalPage = true
+				}
 			}
 
 		case "left", "h":
-			m.finalPage = false
-			if len(m.previousPageTokens) > 0 {
-				err := m.LoadCachedPage(m.pageCount - 1)
-				if err != nil {
-					log.Fatal(err.Error())
+			if m.isSearching && m.searchModel != nil {
+				m.searchModel.finalPage = false
+				if len(m.searchModel.previousPageTokens) > 0 {
+					err := m.LoadSearchCachedPage(m.searchModel.pageCount - 1)
+					if err != nil {
+						log.Fatal(err.Error())
+					}
+				}
+			} else {
+				m.finalPage = false
+				if len(m.previousPageTokens) > 0 {
+					err := m.LoadCachedPage(m.pageCount - 1)
+					if err != nil {
+						log.Fatal(err.Error())
+					}
 				}
 			}
 		case "enter":
